@@ -1,11 +1,11 @@
 {
-    "name": "solar_portal",
-    "short_name": "solar_portal",
+    "name": "GreenIntel — Solar Survey Portal",
+    "short_name": "GreenIntel",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0A3C1F",
+    "theme_color": "#0A3C1F",
+    "description": "GreenIntel Energy Solutions LLP — Solar Site Survey portal.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
