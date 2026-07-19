@@ -22,7 +22,7 @@
   video{ width:100%; height:100%; object-fit:cover; display:block; }
   .dial{ position:absolute; top:12px; left:12px; width:96px; height:96px; border-radius:50%;
          background:rgba(0,0,0,.45); border:2px solid rgba(255,255,255,.6); }
-  .rose{ position:absolute; inset:0; }
+  .rose{ position:absolute; inset:0; transition:transform .12s linear; }
   .tick{ position:absolute; left:50%; top:6px; transform-origin:50% 42px; font-size:11px; font-weight:800; color:#fff; margin-left:-6px; width:12px; text-align:center; }
   .tick.n{ color:#ff6b6b; }
   .needle{ position:absolute; left:50%; top:50%; width:2px; height:38px; background:var(--amber); transform-origin:50% 0; margin-left:-1px; }
@@ -95,6 +95,17 @@
   function cardinal(h){ return DIRS[Math.round(h/22.5)%16]; }
   function isSouth(h){ return h>=135 && h<=225; }   // 180° ± 45°, matches the app rule
 
+  // Magnetometer output is noisy -> low-pass filter the heading. Average on the
+  // unit circle (sin/cos) so the 359°->0° wrap doesn't average to ~180°.
+  var sSin=null, sCos=null, SMOOTH=0.15, southState=false;
+  function smooth(h){
+    var r=h*Math.PI/180, s=Math.sin(r), c=Math.cos(r);
+    if(sSin==null){ sSin=s; sCos=c; } else { sSin+=SMOOTH*(s-sSin); sCos+=SMOOTH*(c-sCos); }
+    var o=Math.atan2(sSin,sCos)*180/Math.PI; return o<0?o+360:o;
+  }
+  // Hysteresis so the SOUTH badge doesn't flicker right at the 135/225 boundary.
+  function southHyst(h){ southState = southState ? (h>=130&&h<=230) : (h>=135&&h<=225); return southState; }
+
   var start=document.getElementById('start'), stage=document.getElementById('stage'),
       errEl=document.getElementById('err'), cam=document.getElementById('cam'),
       rose=document.getElementById('rose'), southEl=document.getElementById('south'),
@@ -133,11 +144,11 @@
     if(h==null){ updateDiag(); return; }
     screenAngle = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
     h = (h + screenAngle) % 360; if(h<0) h+=360;
-    heading = h;
-    hdgEl.textContent = Math.round(h);
-    cardEl.textContent = cardinal(h);
-    rose.style.transform = 'rotate(' + (-h) + 'deg)';   // rotate rose so N points to real north
-    var s = isSouth(h);
+    heading = smooth(h);
+    hdgEl.textContent = Math.round(heading);
+    cardEl.textContent = cardinal(heading);
+    rose.style.transform = 'rotate(' + (-heading) + 'deg)';   // rotate rose so N points to real north
+    var s = southHyst(heading);
     southEl.textContent = s ? 'SOUTH ✓' : 'Point south';
     southEl.className = 'south' + (s?' ok':'');
     updateDiag();
