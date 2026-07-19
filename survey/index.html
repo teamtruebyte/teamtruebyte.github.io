@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Solar Survey — Surveyor</title>
+<meta name="theme-color" content="#14442b">
+<meta name="description" content="Field survey capture — assignments, form, photos with compass and GPS.">
+
+<!-- Installable / "Add to Home Screen" -->
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Solar Survey">
+<meta name="mobile-web-app-capable" content="yes">
+
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+
+<div id="app"><div class="center"><div class="spinner"></div></div></div>
+
+<!-- supabase-js ships as a UMD bundle -> plain script, sets window.supabase.
+     Vendored (not a CDN) so the app still boots offline from the service-worker
+     cache and has no third-party runtime dependency. -->
+<script src="./vendor/supabase.js"></script>
+<script type="module" src="./js/app.js"></script>
+
+<script>
+  // Scoped to this folder, so it never interferes with the Flutter portal's
+  // own service worker at the site root.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

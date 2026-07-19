@@ -1,0 +1,191 @@
+/* Surveyor PWA styles.
+ *
+ * Deliberately LIGHT and high-contrast: surveyors use this outdoors in direct
+ * sun, where a dark UI is hard to read. Brand colours match the Ops portal
+ * (deep pine + amber) from web/lib/theme/app_theme.dart. System fonts only —
+ * no webfont download, so the app boots instantly and works offline.
+ */
+:root {
+  --pine:#14442b; --pine2:#1c5c3a; --amber:#f4a828; --amber-d:#8a5b00;
+  --south:#2e7d32; --danger:#b3261e; --warn:#8a5b00;
+  --bg:#f6f7f4; --card:#fff; --line:#dfe4dd; --text:#16201b; --mut:#5f6f66;
+  --radius:14px;
+}
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { margin:0; padding:0; }
+body {
+  background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,
+  "Segoe UI",Roboto,sans-serif;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+h1,h2,h3 { margin:0; font-weight:800; letter-spacing:-.01em; }
+p { margin:6px 0; }
+.mut { color:var(--mut); }
+.sm { font-size:13px; }
+.req { color:var(--danger); margin-left:3px; }
+.center { min-height:70vh; display:grid; place-items:center; }
+.row { display:flex; gap:10px; align-items:center; }
+.row.between { justify-content:space-between; }
+
+/* ── chrome ──────────────────────────────────────────────────────────────── */
+.top {
+  display:flex; align-items:center; gap:10px; padding:14px 16px;
+  padding-top:calc(14px + env(safe-area-inset-top));
+  background:linear-gradient(90deg,var(--pine),var(--pine2)); color:#fff;
+  position:sticky; top:0; z-index:5;
+}
+.top h1 { font-size:17px; }
+.top p { margin:2px 0 0; font-size:12px; color:#cfe6d8;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60vw; }
+.top .icon {
+  margin-left:auto; background:rgba(255,255,255,.14); color:#fff; border:0;
+  width:38px; height:38px; border-radius:10px; font-size:20px; line-height:1;
+}
+.top #backBtn { margin-left:0; font-size:26px; }
+.wrap { padding:16px; max-width:640px; margin:0 auto; }
+
+.progress { height:4px; background:var(--line); }
+.progress div { height:100%; background:var(--amber); transition:width .2s; }
+
+.nav {
+  position:sticky; bottom:0; display:flex; gap:12px; padding:12px 16px;
+  padding-bottom:calc(12px + env(safe-area-inset-bottom));
+  background:var(--card); border-top:1px solid var(--line);
+}
+.nav .btn { flex:1; }
+
+/* ── blocks ──────────────────────────────────────────────────────────────── */
+.card {
+  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px; margin-bottom:12px;
+}
+button.card { display:block; width:100%; text-align:left; font:inherit; color:inherit; }
+.card.tap:active { background:#eef2ec; }
+.card h3 { font-size:15px; margin-bottom:8px; }
+
+.btn {
+  display:block; width:100%; border:0; border-radius:12px; padding:14px;
+  font-size:16px; font-weight:700; background:var(--pine); color:#fff; margin-top:10px;
+}
+.btn:active { filter:brightness(.92); }
+.btn:disabled { opacity:.55; }
+.btn.ghost { background:#eaefe8; color:var(--pine); border:1px solid var(--line); }
+.btn.danger { background:var(--danger); color:#fff; }
+.btn.ghost.danger { background:#fdecea; color:var(--danger); border-color:#f5c6c2; }
+.link { background:none; border:0; color:var(--pine); font-weight:700; font-size:14px; padding:4px; }
+.link.danger { color:var(--danger); }
+
+label { display:block; margin-top:12px; font-size:13px; font-weight:600; color:var(--mut); }
+input, select, textarea {
+  display:block; width:100%; margin-top:5px; padding:12px; font:16px/1.4 inherit;
+  color:var(--text); background:#fff; border:1px solid var(--line); border-radius:10px;
+}
+input:focus, select:focus, textarea:focus { outline:2px solid var(--amber); border-color:transparent; }
+textarea { resize:vertical; }
+
+.tabs { display:flex; gap:8px; margin-bottom:12px; }
+.tab { flex:1; padding:10px; border:1px solid var(--line); background:#fff;
+  border-radius:10px; font-weight:700; color:var(--mut); font-size:14px; }
+.tab.on { background:var(--pine); color:#fff; border-color:var(--pine); }
+
+.chip { font-size:11px; font-weight:800; padding:4px 8px; border-radius:99px;
+  background:#eaefe8; color:var(--mut); text-transform:uppercase; letter-spacing:.03em; }
+.chip.scheduled { background:#e7effb; color:#17457e; }
+.chip.in_progress { background:#fdf0d8; color:var(--amber-d); }
+.chip.completed { background:#e3f2e5; color:var(--south); }
+.chip.not_done { background:#fdecea; color:var(--danger); }
+
+.banner { background:#fdf0d8; color:var(--amber-d); padding:10px 16px; font-size:14px;
+  font-weight:600; display:flex; align-items:center; gap:8px; }
+.banner.warn { background:#eef2ec; color:var(--mut); }
+.empty { text-align:center; padding:28px 12px; color:var(--mut); }
+.day { margin:18px 0 8px; font-size:13px; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--mut); }
+.hintbar { background:#fdf0d8; color:var(--amber-d); border-radius:10px;
+  padding:8px 10px; font-size:13px; font-weight:600; }
+.hintbar.ok { background:#e3f2e5; color:var(--south); }
+.err { color:var(--danger); font-size:14px; min-height:20px; }
+
+/* ── photos ──────────────────────────────────────────────────────────────── */
+.grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+.thumb { position:relative; aspect-ratio:1; border-radius:10px; overflow:hidden;
+  border:1px solid var(--line); }
+.thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.thumb .x { position:absolute; top:4px; right:4px; width:24px; height:24px;
+  border:0; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; font-size:12px; }
+.s-badge { position:absolute; bottom:4px; left:4px; background:var(--south); color:#fff;
+  font-size:11px; font-weight:800; padding:2px 6px; border-radius:6px; }
+.slot { background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px; margin-bottom:12px; }
+.slot.has { border-color:var(--south); }
+.slot img { width:100%; border-radius:10px; margin-top:8px; display:block; }
+
+/* ── auth ────────────────────────────────────────────────────────────────── */
+.auth { max-width:400px; margin:0 auto; padding:32px 20px; }
+.brand { text-align:center; margin-bottom:20px; }
+.brand .logo { font-size:44px; color:var(--pine); }
+.brand h1 { font-size:24px; margin-top:6px; }
+.brand p { color:var(--mut); font-size:14px; }
+.or { display:flex; align-items:center; gap:10px; margin:14px 0; color:var(--mut); font-size:13px; }
+.or::before, .or::after { content:""; flex:1; height:1px; background:var(--line); }
+
+/* ── sheets & toasts ─────────────────────────────────────────────────────── */
+.sheet-wrap { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:40;
+  display:flex; align-items:flex-end; }
+.sheet { background:var(--card); width:100%; border-radius:18px 18px 0 0; padding:20px;
+  padding-bottom:calc(20px + env(safe-area-inset-bottom)); max-height:85vh; overflow:auto; }
+.sheet h3 { font-size:18px; }
+.sheet .row { margin-top:12px; }
+.sheet .row .btn { flex:1; }
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.pick { border:1px solid var(--line); background:#fff; border-radius:99px;
+  padding:8px 12px; font-size:13px; font-weight:600; color:var(--text); }
+
+.toast { position:fixed; left:16px; right:16px; bottom:24px; z-index:60;
+  background:#16201b; color:#fff; padding:13px 16px; border-radius:12px; font-size:14px;
+  font-weight:600; opacity:0; transform:translateY(12px); transition:.25s; }
+.toast.in { opacity:1; transform:none; }
+.toast.ok { background:var(--south); }
+.toast.err { background:var(--danger); }
+.toast.warn { background:var(--warn); }
+
+.spinner { width:34px; height:34px; border:3px solid var(--line);
+  border-top-color:var(--pine); border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ── camera overlay ──────────────────────────────────────────────────────── */
+.cam-overlay { position:fixed; inset:0; z-index:80; background:#000; color:#fff;
+  display:flex; flex-direction:column; }
+.cam-top { display:flex; align-items:center; gap:12px; padding:12px 14px;
+  padding-top:calc(12px + env(safe-area-inset-top)); }
+.cam-x { background:rgba(255,255,255,.16); color:#fff; border:0; width:36px; height:36px;
+  border-radius:50%; font-size:16px; }
+.cam-title { font-weight:700; font-size:15px; }
+.cam-stage { position:relative; flex:1; overflow:hidden; }
+.cam-stage video { width:100%; height:100%; object-fit:cover; display:block; }
+
+.dial { position:absolute; top:12px; left:12px; width:92px; height:92px; border-radius:50%;
+  background:rgba(0,0,0,.45); border:2px solid rgba(255,255,255,.6); }
+.pointer { position:absolute; left:50%; top:2px; margin-left:-6px; z-index:2;
+  border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:9px solid #fff; }
+.rose { position:absolute; inset:0; transition:transform .12s linear; }
+.tick { position:absolute; font-size:11px; font-weight:800; color:#fff; }
+.tick.n { top:5px; left:50%; transform:translateX(-50%); color:#ff6b6b; }
+.tick.e { right:6px; top:50%; transform:translateY(-50%); }
+.tick.s { bottom:5px; left:50%; transform:translateX(-50%); }
+.tick.w { left:6px; top:50%; transform:translateY(-50%); }
+.needle { position:absolute; left:50%; top:50%; width:2px; height:34px;
+  background:var(--amber); transform-origin:50% 0; margin-left:-1px; }
+
+.cam-badge { position:absolute; top:12px; right:12px; padding:8px 12px; border-radius:10px;
+  font-weight:800; font-size:13px; background:rgba(0,0,0,.5);
+  border:1px solid rgba(255,255,255,.35); }
+.cam-badge.ok { background:var(--south); border-color:#fff; }
+.cam-readout { position:absolute; left:12px; right:12px; bottom:12px; font-size:13px;
+  font-weight:600; background:rgba(0,0,0,.5); padding:8px 10px; border-radius:10px; }
+.cam-bottom { padding:14px; padding-bottom:calc(18px + env(safe-area-inset-bottom));
+  text-align:center; }
+.cam-hint { margin:0 0 10px; font-size:13px; color:#cfe6d8; }
+.cam-shot { width:72px; height:72px; border-radius:50%; background:#fff;
+  border:5px solid rgba(255,255,255,.35); }
+.cam-shot:active { transform:scale(.94); }
