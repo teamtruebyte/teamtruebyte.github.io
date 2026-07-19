@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0f2417">
+<title>Surveyor PWA — Compass / Camera / GPS test</title>
+<style>
+  :root{ --pine:#14442b; --pine2:#1c5c3a; --amber:#f4a828; --south:#2e7d32; --bg:#0e1512; --card:#16201b; --line:#2a3a30; --text:#eef4f0; --mut:#9fb3a8; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header{ padding:14px 16px; background:linear-gradient(90deg,var(--pine),var(--pine2)); }
+  header h1{ margin:0; font-size:16px; font-weight:700; }
+  header p{ margin:4px 0 0; font-size:12px; color:#cfe6d8; }
+  .wrap{ padding:16px; max-width:520px; margin:0 auto; }
+  .btn{ display:block; width:100%; border:0; border-radius:12px; padding:15px; font-size:16px; font-weight:700;
+        background:var(--amber); color:#3a2b06; }
+  .btn.sec{ background:var(--pine2); color:#fff; }
+  .btn:disabled{ opacity:.5; }
+  .hint{ font-size:13px; color:var(--mut); margin:12px 2px; line-height:1.5; }
+  .camwrap{ position:relative; width:100%; aspect-ratio:3/4; background:#000; border-radius:14px; overflow:hidden; border:1px solid var(--line); }
+  video{ width:100%; height:100%; object-fit:cover; display:block; }
+  .dial{ position:absolute; top:12px; left:12px; width:96px; height:96px; border-radius:50%;
+         background:rgba(0,0,0,.45); border:2px solid rgba(255,255,255,.6); }
+  .rose{ position:absolute; inset:0; }
+  .tick{ position:absolute; left:50%; top:6px; transform-origin:50% 42px; font-size:11px; font-weight:800; color:#fff; margin-left:-6px; width:12px; text-align:center; }
+  .tick.n{ color:#ff6b6b; }
+  .needle{ position:absolute; left:50%; top:50%; width:2px; height:38px; background:var(--amber); transform-origin:50% 0; margin-left:-1px; }
+  .pointer{ position:absolute; left:50%; top:2px; margin-left:-6px; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:9px solid #fff; }
+  .south{ position:absolute; top:12px; right:12px; padding:8px 12px; border-radius:10px; font-weight:800; font-size:13px;
+          background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.35); color:#fff; }
+  .south.ok{ background:var(--south); border-color:#fff; }
+  .readout{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+  .cell{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .cell .k{ font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.04em; }
+  .cell .v{ font-size:20px; font-weight:800; margin-top:3px; }
+  .cell.full{ grid-column:1/3; }
+  #shot img{ width:100%; border-radius:12px; border:1px solid var(--line); margin-top:10px; }
+  a.dl{ display:inline-block; margin-top:8px; color:var(--amber); font-weight:700; font-size:14px; }
+  details{ margin-top:16px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  summary{ font-weight:700; font-size:14px; }
+  pre{ white-space:pre-wrap; word-break:break-word; font-size:12px; color:var(--mut); margin:10px 0 0; }
+  .err{ color:#ff8a8a; font-size:13px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Surveyor capture test</h1>
+  <p>Checks camera + GPS + compass in the browser — before we build the full PWA.</p>
+</header>
+<div class="wrap">
+  <button id="start" class="btn">Start test — enable camera, GPS &amp; compass</button>
+  <p class="hint">
+    On the prompt(s), tap <b>Allow</b> for Camera and Location. Then <b>slowly wave the phone in a figure-8</b>
+    once to calibrate the compass. Point the back of the phone toward <b>south</b> — the badge should turn green.
+  </p>
+  <div id="err" class="err"></div>
+
+  <div id="stage" hidden>
+    <div class="camwrap">
+      <video id="cam" autoplay playsinline muted></video>
+      <div class="dial">
+        <div class="pointer"></div>
+        <div id="rose" class="rose">
+          <div class="tick n" style="transform:rotate(0deg)">N</div>
+          <div class="tick" style="transform:rotate(90deg)">E</div>
+          <div class="tick" style="transform:rotate(180deg)">S</div>
+          <div class="tick" style="transform:rotate(270deg)">W</div>
+          <div class="needle"></div>
+        </div>
+      </div>
+      <div id="south" class="south">Point south</div>
+    </div>
+
+    <div class="readout">
+      <div class="cell"><div class="k">Heading</div><div class="v"><span id="hdg">–</span>°</div></div>
+      <div class="cell"><div class="k">Facing</div><div class="v" id="card">–</div></div>
+      <div class="cell full"><div class="k">GPS (lat, lng · accuracy)</div><div class="v" id="gps" style="font-size:15px">waiting…</div></div>
+    </div>
+
+    <button id="capture" class="btn sec" style="margin-top:14px">Capture photo with watermark</button>
+    <canvas id="canvas" hidden></canvas>
+    <div id="shot"></div>
+
+    <details>
+      <summary>Diagnostics (screenshot &amp; send me this)</summary>
+      <pre id="diag">–</pre>
+    </details>
+  </div>
+</div>
+
+<script>
+(function(){
+  var DIRS=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  function cardinal(h){ return DIRS[Math.round(h/22.5)%16]; }
+  function isSouth(h){ return h>=135 && h<=225; }   // 180° ± 45°, matches the app rule
+
+  var start=document.getElementById('start'), stage=document.getElementById('stage'),
+      errEl=document.getElementById('err'), cam=document.getElementById('cam'),
+      rose=document.getElementById('rose'), southEl=document.getElementById('south'),
+      hdgEl=document.getElementById('hdg'), cardEl=document.getElementById('card'),
+      gpsEl=document.getElementById('gps'), diag=document.getElementById('diag'),
+      captureBtn=document.getElementById('capture'), canvas=document.getElementById('canvas'),
+      shot=document.getElementById('shot');
+
+  var heading=null, headingSrc='—', lastEvt={}, pos=null, screenAngle=0;
+
+  function showErr(m){ errEl.textContent=m; }
+  function updateDiag(){
+    diag.textContent = JSON.stringify({
+      userAgent: navigator.userAgent,
+      headingSource: headingSrc,
+      heading: heading==null?null:Math.round(heading),
+      cardinal: heading==null?null:cardinal(heading),
+      south: heading==null?null:isSouth(heading),
+      screenAngle: screenAngle,
+      absoluteEventSupported: ('ondeviceorientationabsolute' in window),
+      lastOrientation: lastEvt,
+      gps: pos
+    }, null, 2);
+  }
+
+  function onOrient(e){
+    lastEvt = { absolute:e.absolute, alpha:round(e.alpha), beta:round(e.beta), gamma:round(e.gamma),
+                webkitCompassHeading: (typeof e.webkitCompassHeading==='number')?round(e.webkitCompassHeading):undefined,
+                webkitCompassAccuracy: e.webkitCompassAccuracy };
+    var h=null;
+    if(typeof e.webkitCompassHeading==='number' && !isNaN(e.webkitCompassHeading)){
+      h = e.webkitCompassHeading; headingSrc='webkitCompassHeading (iOS)';
+    } else if(e.alpha!=null){
+      h = 360 - e.alpha; headingSrc = e.absolute ? 'alpha (Android, absolute)' : 'alpha (relative — may drift)';
+    }
+    if(h==null){ updateDiag(); return; }
+    screenAngle = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    h = (h + screenAngle) % 360; if(h<0) h+=360;
+    heading = h;
+    hdgEl.textContent = Math.round(h);
+    cardEl.textContent = cardinal(h);
+    rose.style.transform = 'rotate(' + (-h) + 'deg)';   // rotate rose so N points to real north
+    var s = isSouth(h);
+    southEl.textContent = s ? 'SOUTH ✓' : 'Point south';
+    southEl.className = 'south' + (s?' ok':'');
+    updateDiag();
+  }
+  function round(v){ return v==null?null:Math.round(v*10)/10; }
+
+  async function begin(){
+    showErr('');
+    // 1) compass permission (iOS 13+ needs an explicit request on a tap)
+    try{
+      if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+        var p = await DeviceOrientationEvent.requestPermission();
+        if(p!=='granted') showErr('Compass permission denied — heading will not show.');
+      }
+    }catch(e){ /* non-iOS throws; ignore */ }
+    if('ondeviceorientationabsolute' in window){
+      window.addEventListener('deviceorientationabsolute', onOrient, true);
+    }
+    window.addEventListener('deviceorientation', onOrient, true);
+
+    // 2) camera (rear)
+    try{
+      var stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } }, audio:false });
+      cam.srcObject = stream;
+    }catch(e){ showErr('Camera error: '+e.message); }
+
+    // 3) GPS
+    if(navigator.geolocation){
+      navigator.geolocation.watchPosition(function(p){
+        pos = { lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6), acc:Math.round(p.coords.accuracy) };
+        gpsEl.textContent = pos.lat+', '+pos.lng+'  (±'+pos.acc+' m)';
+        updateDiag();
+      }, function(e){ gpsEl.textContent='GPS error: '+e.message; },
+      { enableHighAccuracy:true, maximumAge:2000, timeout:15000 });
+    } else { gpsEl.textContent='No geolocation support'; }
+
+    start.hidden = true; stage.hidden = false; updateDiag();
+  }
+
+  function capture(){
+    if(!cam.videoWidth){ showErr('Camera not ready yet.'); return; }
+    var w=cam.videoWidth, h=cam.videoHeight, ctx=canvas.getContext('2d');
+    canvas.width=w; canvas.height=h;
+    ctx.drawImage(cam,0,0,w,h);
+    var pad=Math.round(w*0.03), fs=Math.round(w*0.033), bh=fs*3.4;
+    // caption band
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,h-bh,w,bh);
+    ctx.fillStyle='#fff'; ctx.font='600 '+fs+'px system-ui,sans-serif'; ctx.textBaseline='top';
+    var gpsTxt = pos ? ('GPS '+pos.lat+', '+pos.lng+'  (±'+pos.acc+'m)') : 'GPS unavailable';
+    var hd = heading==null?'—':(Math.round(heading)+'° '+cardinal(heading));
+    ctx.fillText(gpsTxt, pad, h-bh+pad*0.6);
+    ctx.fillText('Heading '+hd+(heading!=null&&isSouth(heading)?'   ✓ SOUTH FACING':''), pad, h-bh+pad*0.6+fs*1.2);
+    ctx.fillText(new Date().toLocaleString(), pad, h-bh+pad*0.6+fs*2.4);
+    if(heading!=null && isSouth(heading)){
+      ctx.fillStyle='#2e7d32'; ctx.fillRect(pad,pad,fs*7.5,fs*1.7);
+      ctx.fillStyle='#fff'; ctx.font='800 '+fs+'px system-ui'; ctx.fillText('SOUTH FACING', pad+fs*0.4, pad+fs*0.35);
+    }
+    var url = canvas.toDataURL('image/jpeg',0.9);
+    shot.innerHTML = '<img src="'+url+'"><br><a class="dl" href="'+url+'" download="capture-test.jpg">Download this photo</a>';
+  }
+
+  start.addEventListener('click', begin);
+  captureBtn.addEventListener('click', capture);
+})();
+</script>
+</body>
+</html>
