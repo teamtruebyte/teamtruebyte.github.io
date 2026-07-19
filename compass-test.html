@@ -94,10 +94,12 @@
   var DIRS=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
   function cardinal(h){ return DIRS[Math.round(h/22.5)%16]; }
   function isSouth(h){ return h>=135 && h<=225; }   // 180° ± 45°, matches the app rule
+  // Smallest signed angle a-b, in [-180,180] — handles the 359°/0° wrap.
+  function angDiff(a,b){ return ((a-b)%360+540)%360-180; }
 
   // Magnetometer output is noisy -> low-pass filter the heading. Average on the
   // unit circle (sin/cos) so the 359°->0° wrap doesn't average to ~180°.
-  var sSin=null, sCos=null, SMOOTH=0.15, southState=false;
+  var sSin=null, sCos=null, SMOOTH=0.10, southState=false;
   function smooth(h){
     var r=h*Math.PI/180, s=Math.sin(r), c=Math.cos(r);
     if(sSin==null){ sSin=s; sCos=c; } else { sSin+=SMOOTH*(s-sSin); sCos+=SMOOTH*(c-sCos); }
@@ -115,6 +117,7 @@
       shot=document.getElementById('shot');
 
   var heading=null, headingSrc='—', lastEvt={}, pos=null, screenAngle=0;
+  var gotAbsolute=false, shown=null;   // shown = last heading actually drawn (deadband)
 
   function showErr(m){ errEl.textContent=m; }
   function updateDiag(){
@@ -126,12 +129,13 @@
       south: heading==null?null:isSouth(heading),
       screenAngle: screenAngle,
       absoluteEventSupported: ('ondeviceorientationabsolute' in window),
+      usingAbsolute: gotAbsolute,
       lastOrientation: lastEvt,
       gps: pos
     }, null, 2);
   }
 
-  function onOrient(e){
+  function handle(e){
     lastEvt = { absolute:e.absolute, alpha:round(e.alpha), beta:round(e.beta), gamma:round(e.gamma),
                 webkitCompassHeading: (typeof e.webkitCompassHeading==='number')?round(e.webkitCompassHeading):undefined,
                 webkitCompassAccuracy: e.webkitCompassAccuracy };
@@ -145,14 +149,25 @@
     screenAngle = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
     h = (h + screenAngle) % 360; if(h<0) h+=360;
     heading = smooth(h);
-    hdgEl.textContent = Math.round(heading);
-    cardEl.textContent = cardinal(heading);
-    rose.style.transform = 'rotate(' + (-heading) + 'deg)';   // rotate rose so N points to real north
+    // Deadband: only redraw the number/dial when the heading actually moves ~1°,
+    // so sub-degree sensor jitter doesn't twitch the display.
+    if(shown==null || Math.abs(angDiff(heading, shown))>=1){
+      shown = heading;
+      hdgEl.textContent = Math.round(shown);
+      cardEl.textContent = cardinal(shown);
+      rose.style.transform = 'rotate(' + (-shown) + 'deg)';   // rotate rose so N points to real north
+    }
     var s = southHyst(heading);
     southEl.textContent = s ? 'SOUTH ✓' : 'Point south';
     southEl.className = 'south' + (s?' ok':'');
     updateDiag();
   }
+  // Prefer the ABSOLUTE (true-north) sensor. Many Android phones ALSO fire the
+  // plain `deviceorientation` event with a relative/drifting heading; feeding
+  // both into one handler makes them fight and the dial flickers. So once an
+  // absolute reading has arrived, ignore the relative stream entirely.
+  function onAbsolute(e){ gotAbsolute=true; handle(e); }
+  function onRelative(e){ if(gotAbsolute) return; handle(e); }
   function round(v){ return v==null?null:Math.round(v*10)/10; }
 
   async function begin(){
@@ -165,9 +180,9 @@
       }
     }catch(e){ /* non-iOS throws; ignore */ }
     if('ondeviceorientationabsolute' in window){
-      window.addEventListener('deviceorientationabsolute', onOrient, true);
+      window.addEventListener('deviceorientationabsolute', onAbsolute, true);
     }
-    window.addEventListener('deviceorientation', onOrient, true);
+    window.addEventListener('deviceorientation', onRelative, true);
 
     // 2) camera (rear)
     try{
