@@ -492,7 +492,12 @@ function fieldsStep(step, doc, grouped) {
   const gps = step.gps
     ? `<button class="btn ghost" id="gpsBtn">Use my GPS for latitude / longitude</button>`
     : '';
-  return `${slots}<div class="card">${step.fields.map((f) => fieldRow(f, doc)).join('')}${gps}</div>`;
+  const solar = step.solarFill
+    ? `<button class="btn ghost" id="solarBtn">Auto-fill from NASA (wind, insolation, temperature)</button>
+       <p class="mut sm">Uses the latitude / longitude above. Needs a connection — you can
+       always type the values in by hand.</p>`
+    : '';
+  return `${slots}<div class="card">${step.fields.map((f) => fieldRow(f, doc)).join('')}${gps}${solar}</div>`;
 }
 
 function tableStep(step, doc) {
@@ -610,6 +615,37 @@ function wirePhotoButtons() {
     S.draft.doc[STEPS[S.step].tableKey].splice(+b.dataset.delrow, 1);
     await saveDraft(); render();
   }));
+
+  /* Best-effort NASA POWER auto-fill — mirrors _autofillSolar() in the mobile
+   * wizard, including which fields it writes and how they're rounded. Day
+   * Length / Tilt / Power Production are deliberately NOT filled (removed from
+   * the report per client request in Phase 3.7). */
+  document.getElementById('solarBtn')?.addEventListener('click', async (e) => {
+    const lat = parseFloat(S.draft.doc.latitude);
+    const lon = parseFloat(S.draft.doc.longitude);
+    if (isNaN(lat) || isNaN(lon)) {
+      return toast('Set the latitude & longitude first (GPS or manual).', 'err');
+    }
+    const label = e.target.textContent;
+    e.target.disabled = true;
+    e.target.textContent = 'Fetching from NASA…';
+    try {
+      const r = await api.fetchSolar(lat, lon);
+      const d = S.draft.doc;
+      d.temperatureAvg = Number(r.tempAvg).toFixed(1);
+      d.temperatureMax = Number(r.tempMax).toFixed(1);
+      d.temperatureMin = Number(r.tempMin).toFixed(1);
+      d.insolationAnnual = String(Math.round(Number(r.insolationAnnual)));
+      d.windSpeed = Number(r.windAvg).toFixed(1);
+      await saveDraft();
+      render();
+      toast('Solar data filled from NASA POWER. Edit if needed.', 'ok');
+    } catch {
+      e.target.disabled = false;
+      e.target.textContent = label;
+      toast("Couldn't fetch solar data — enter the values manually.", 'err');
+    }
+  });
 
   document.getElementById('gpsBtn')?.addEventListener('click', async (e) => {
     e.target.disabled = true; e.target.textContent = 'Getting GPS…';

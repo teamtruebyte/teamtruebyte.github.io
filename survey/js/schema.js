@@ -70,7 +70,8 @@ export const STEPS = [
     id: 'solar',
     title: 'Solar Resource',
     type: 'fields',
-    gps: true, // renders the "Use my GPS" button, fills latitude/longitude/gpsAccuracy
+    gps: true,       // "Use my GPS" button -> latitude / longitude / gpsAccuracy
+    solarFill: true, // "Auto-fill from NASA" button -> wind / insolation / temperatures
     fields: [
       { key: 'latitude', label: 'Latitude', required: true, type: 'number' },
       { key: 'longitude', label: 'Longitude', required: true, type: 'number' },

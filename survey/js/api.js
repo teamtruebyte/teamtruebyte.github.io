@@ -99,6 +99,23 @@ export async function markNotDone(surveyId, reason) {
   if (error) throw error;
 }
 
+/* ── solar auto-fill ─────────────────────────────────────────────────────── */
+
+/**
+ * Solar-resource figures for a coordinate, via the deployed `solar-lookup` Edge
+ * Function (fronts NASA POWER and caches results in solar_cache — migration
+ * 0013). Same call the mobile SolarLookupService makes.
+ *
+ * Best-effort only: throws on any failure so the caller can fall back to manual
+ * entry. Nothing here is required to submit a survey, and it needs a connection.
+ */
+export async function fetchSolar(lat, lon) {
+  const { data, error } = await sb.functions.invoke('solar-lookup', { body: { lat, lon } });
+  if (error) throw error;
+  if (!data || data.tempAvg == null) throw new Error('No solar data for this location.');
+  return data;
+}
+
 /* ── submit ──────────────────────────────────────────────────────────────── */
 
 /** PhotoItem JSON exactly as the mobile model serialises it. */
