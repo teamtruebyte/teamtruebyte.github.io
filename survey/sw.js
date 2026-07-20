@@ -7,7 +7,7 @@
  * Bump CACHE when you deploy so phones pick the new build up immediately —
  * otherwise an old shell can linger (the same cache trap the Flutter portal hit).
  */
-const CACHE = 'surveyor-pwa-v2';
+const CACHE = 'surveyor-pwa-v4';
 
 const SHELL = [
   './',

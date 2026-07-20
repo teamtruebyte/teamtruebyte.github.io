@@ -1,10 +1,27 @@
 /* Survey form definition — the single source of truth for what the PWA asks.
  *
- * Mirrors the mobile wizard (mobile/lib/screens/survey_wizard_screen.dart) and
- * TableDefs / SurveySteps in mobile/lib/utils/constants.dart. Every `key` here
- * matches a key in Survey.toJson() (mobile/lib/models/survey.dart) so the JSON
- * this app writes to survey_data.form is byte-compatible with the app's — the
- * existing PDF generator and the Ops portal editor read both identically.
+ * This is an EXACT replica of the mobile wizard's flow
+ * (mobile/lib/screens/survey_wizard_screen.dart, build list ~line 288) and
+ * TableDefs / SurveySteps in mobile/lib/utils/constants.dart:
+ *
+ *   1 General Information   Main Gate slot + Selfie slot + fields
+ *   2 Solar Resource        GPS + NASA auto-fill + fields
+ *   3 Battery Details       table + Battery Photos
+ *   4 PIU / AMF             table + PIU/AMF Photos
+ *   5 SMPS Details          table + SMPS Photos
+ *   6 DG Details            table + DG Photos
+ *   7 Load Details          two fixed sub-sections
+ *   8 Observations          fields
+ *   9 Photos                Site / Infrastructure / Label / Other + SMPS Label slot
+ *  10 Layout                Layout Images
+ *
+ * Equipment photos are captured INSIDE their own section (you photograph the
+ * battery bank while standing at it); the Photos step holds only the site-wide
+ * categories. This mirrors _sectionPhotoCard() / _stepPhotos() in the app.
+ *
+ * Every `key` matches a key in Survey.toJson() (mobile/lib/models/survey.dart)
+ * so the JSON written to survey_data.form is byte-compatible with the app's —
+ * the PDF generators and the Ops portal editor read both identically.
  *
  * NOTE (Phase 3.7): dayLength*, tilt* and powerProduction were removed from the
  * surveyor's Solar Resource step. powerProduction is filled by the CLIENT in the
@@ -40,15 +57,14 @@ export const TABLE_DEFS = {
   ],
 };
 
-/* The ordered steps. `type` drives which renderer app.js uses:
- *   fields | table | load | photos | layout
- */
+/* `type` drives the main renderer: fields | table | load | photos | layout.
+ * Any step may additionally carry `photos` (category blocks) and `slots`
+ * (single-shot reserved categories). */
 export const STEPS = [
   {
     id: 'general',
     title: 'General Information',
     type: 'fields',
-    // Two mandatory single-shot photos captured right at the start.
     slots: [
       { key: 'mainGatePhoto', label: 'Main Gate photo', required: true,
         hint: 'Appears FIRST in the report.' },
@@ -82,10 +98,14 @@ export const STEPS = [
       { key: 'temperatureMin', label: 'Min Temperature (°C)', type: 'number' },
     ],
   },
-  { id: 'battery', title: 'Battery Details', type: 'table', tableKey: 'battery' },
-  { id: 'piuAmf',  title: 'PIU / AMF',       type: 'table', tableKey: 'piuAmf' },
-  { id: 'smps',    title: 'SMPS Details',    type: 'table', tableKey: 'smps' },
-  { id: 'dg',      title: 'DG Details',      type: 'table', tableKey: 'dg' },
+  { id: 'battery', title: 'Battery Details', type: 'table', tableKey: 'battery',
+    photos: [{ category: 'Battery Photos' }] },
+  { id: 'piuAmf', title: 'PIU / AMF', type: 'table', tableKey: 'piuAmf',
+    photos: [{ category: 'PIU/AMF Photos' }] },
+  { id: 'smps', title: 'SMPS Details', type: 'table', tableKey: 'smps',
+    photos: [{ category: 'SMPS Photos' }] },
+  { id: 'dg', title: 'DG Details', type: 'table', tableKey: 'dg',
+    photos: [{ category: 'DG Photos' }] },
   {
     id: 'load',
     title: 'Load Details',
@@ -116,6 +136,16 @@ export const STEPS = [
     id: 'photos',
     title: 'Photos',
     type: 'photos',
+    note: 'Camera photos show a live compass and are stamped with GPS, time & bearing. '
+        + 'Equipment photos are taken inside their own sections.',
+    photos: [
+      // At least one Site Photo is required, but it does NOT have to face south
+      // (see validateForSubmit) — same as the APK.
+      { category: 'Site Photos', required: true },
+      { category: 'Infrastructure Photos' },
+      { category: 'Label / Nameplate Photos' },
+      { category: 'Other Photos' },
+    ],
     slots: [
       { key: 'smpsLabelPhoto', label: 'SMPS Label photo',
         hint: 'Appears LAST in the report. Optional.' },
@@ -143,10 +173,12 @@ export function blankSurvey() {
   };
 }
 
-/* Submit gate — mirrors _validateForSubmit() in the mobile wizard.
- * NOTE: like the app, a south-facing Site Photo is strongly prompted but not a
- * hard block; only the presence of a Site Photo is enforced. Keep the two in
- * step if that rule ever changes. */
+/* Submit gate — mirrors _validateForSubmit() in the mobile wizard exactly.
+ *
+ * A south-facing Site Photo is deliberately NOT required (user decision,
+ * 2026-07-19): it is not enforced in the APK and must not be enforced here.
+ * The compass is still shown while capturing and `isSouthFacing` is still
+ * recorded and badged on the photo — it just doesn't gate submission. */
 export function validateForSubmit(doc, photos) {
   if (!doc.siteId.trim()) return { step: 'general', msg: 'Site ID is required to submit.' };
   if (!doc.siteName.trim()) return { step: 'general', msg: 'Site Name is required to submit.' };

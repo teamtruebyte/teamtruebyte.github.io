@@ -104,6 +104,10 @@ textarea { resize:vertical; }
 .hintbar { background:#fdf0d8; color:var(--amber-d); border-radius:10px;
   padding:8px 10px; font-size:13px; font-weight:600; }
 .hintbar.ok { background:#e3f2e5; color:var(--south); }
+/* Informational banner at the top of a step (e.g. the Photos step note). */
+.notebar { background:#e9f0ea; color:var(--pine); border:1px solid var(--line);
+  border-radius:var(--radius); padding:12px 14px; font-size:13px;
+  font-weight:600; margin-bottom:12px; }
 .err { color:var(--danger); font-size:14px; min-height:20px; }
 
 /* ── photos ──────────────────────────────────────────────────────────────── */

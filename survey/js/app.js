@@ -9,8 +9,7 @@ import * as api from './api.js';
 import * as store from './store.js';
 import { STEPS, TABLE_DEFS, blankSurvey, validateForSubmit } from './schema.js';
 import { capturePhoto, currentPosition } from './capture.js';
-import { PHOTO_CATEGORIES, SITE_CATEGORY, NOT_DONE_REASONS,
-         CAT_MAIN_GATE, CAT_SELFIE, CAT_SMPS_LABEL, CAT_LAYOUT,
+import { NOT_DONE_REASONS, CAT_MAIN_GATE, CAT_SELFIE, CAT_SMPS_LABEL, CAT_LAYOUT,
          compassLabel } from './config.js';
 
 const app = document.getElementById('app');
@@ -402,12 +401,21 @@ function renderWizard() {
   const doc = S.draft.doc;
   const grouped = store.groupPhotos(S.photos);
 
-  let body = '';
-  if (step.type === 'fields')      body = fieldsStep(step, doc, grouped);
-  else if (step.type === 'table')  body = tableStep(step, doc);
-  else if (step.type === 'load')   body = loadStep(step, doc);
-  else if (step.type === 'photos') body = photosStep(step, grouped);
-  else if (step.type === 'layout') body = layoutStep(grouped);
+  let main = '';
+  if (step.type === 'fields')      main = fieldsStep(step, doc);
+  else if (step.type === 'table')  main = tableStep(step, doc);
+  else if (step.type === 'load')   main = loadStep(step, doc);
+  else if (step.type === 'layout') main = layoutStep(grouped);
+
+  const slots = (step.slots || []).map((s) => slotCard(s, grouped[s.key])).join('');
+  const note = step.note ? `<div class="notebar">${esc(step.note)}</div>` : '';
+  const blocks = (step.photos || []).map((p) => photoCard(p, grouped)).join('');
+
+  // The Photos step lists its categories first and the SMPS Label slot last
+  // (matching _stepPhotos()); every other step puts its slots up top.
+  const body = step.type === 'photos'
+    ? note + blocks + slots
+    : slots + main + blocks;
 
   const last = S.step === STEPS.length - 1;
   app.innerHTML = `
@@ -487,8 +495,7 @@ function slotCard(slot, photo) {
   </div>`;
 }
 
-function fieldsStep(step, doc, grouped) {
-  const slots = (step.slots || []).map((s) => slotCard(s, grouped[s.key])).join('');
+function fieldsStep(step, doc) {
   const gps = step.gps
     ? `<button class="btn ghost" id="gpsBtn">Use my GPS for latitude / longitude</button>`
     : '';
@@ -497,7 +504,7 @@ function fieldsStep(step, doc, grouped) {
        <p class="mut sm">Uses the latitude / longitude above. Needs a connection — you can
        always type the values in by hand.</p>`
     : '';
-  return `${slots}<div class="card">${step.fields.map((f) => fieldRow(f, doc)).join('')}${gps}${solar}</div>`;
+  return `<div class="card">${step.fields.map((f) => fieldRow(f, doc)).join('')}${gps}${solar}</div>`;
 }
 
 function tableStep(step, doc) {
@@ -540,23 +547,24 @@ function photoGrid(list) {
   </div>`).join('')}</div>`;
 }
 
-function photosStep(step, grouped) {
-  const cats = PHOTO_CATEGORIES.map((cat) => {
-    const list = grouped.categories[cat] || [];
-    const isSite = cat === SITE_CATEGORY;
-    const hasSouth = list.some((p) => p.isSouthFacing);
-    return `<div class="card">
-      <div class="row between"><strong>${esc(cat)}${isSite ? '<span class="req">*</span>' : ''}</strong>
-        <span class="mut sm">${list.length}</span></div>
-      ${isSite ? `<p class="hintbar ${hasSouth ? 'ok' : ''}">${hasSouth
-          ? 'South-facing photo added ✓'
-          : 'At least one south-facing (S) photo is required here.'}</p>` : ''}
-      ${list.length ? photoGrid(list) : ''}
-      <button class="btn ghost" data-shot-cat="${esc(cat)}" data-south="${isSite}">Take photo</button>
-    </div>`;
-  }).join('');
-  const slots = (step.slots || []).map((s) => slotCard(s, grouped[s.key])).join('');
-  return cats + slots;
+/* One photo category block. Rendered inside whichever step owns the category —
+ * equipment photos sit in their own section, exactly like _sectionPhotoCard()
+ * in the mobile wizard. */
+function photoCard(spec, grouped) {
+  const cat = spec.category;
+  const list = grouped.categories[cat] || [];
+  const hasSouth = list.some((p) => p.isSouthFacing);
+  return `<div class="card">
+    <div class="row between">
+      <strong>${esc(cat)}${spec.required ? '<span class="req">*</span>' : ''}</strong>
+      <span class="mut sm">${list.length}</span>
+    </div>
+    ${spec.south ? `<p class="hintbar ${hasSouth ? 'ok' : ''}">${hasSouth
+        ? 'South-facing photo added ✓'
+        : 'At least one south-facing (S) photo is required here.'}</p>` : ''}
+    ${list.length ? photoGrid(list) : ''}
+    <button class="btn ghost" data-shot-cat="${esc(cat)}" data-south="${!!spec.south}">Take photo</button>
+  </div>`;
 }
 
 function layoutStep(grouped) {
@@ -673,14 +681,6 @@ async function submitCurrent() {
     if (i >= 0) { S.step = i; render(); }
     return toast(bad.msg, 'err');
   }
-  // South-facing is prompted, not hard-blocked — same as the mobile app.
-  const site = grouped.categories[SITE_CATEGORY] || [];
-  if (!site.some((p) => p.isSouthFacing)) {
-    const go = await confirmDialog('No south-facing Site Photo',
-      'The client requires a photo facing south (180° ± 45°). Submit anyway?', 'Submit anyway');
-    if (!go) { S.step = STEPS.findIndex((s) => s.id === 'photos'); return render(); }
-  }
-
   S.busy = true;
   const btn = document.getElementById('submitBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
