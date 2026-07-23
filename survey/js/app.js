@@ -117,7 +117,9 @@ async function syncPending() {
       d.status = 'synced';
       d.syncedAt = new Date().toISOString();
       await store.putDraft(d);
-      await store.deletePhotos(d.surveyId);   // blobs are on the server now
+      // Only clear photos after a Final Submit; keep them through the review
+      // loop so an "Edit & resubmit" still shows what was already captured.
+      if (d.finalizeOnSync) await store.deletePhotos(d.surveyId);
       sent++;
     } catch { /* stay pending, try again later */ }
   }
@@ -397,6 +399,24 @@ function openNotDone(a) {
 async function startSurvey(a, { markStarted = true, finalize = false } = {}) {
   const s = a.site || {};
   let draft = await store.getDraft(a.id);
+
+  // For a survey already in the review pipeline, the SERVER is the source of
+  // truth (it may carry edits Ops made during review). Pull the latest form
+  // back so "Edit & resubmit" / "Final submit" never opens a blank form and a
+  // resubmit can't silently overwrite Ops's edits. Best-effort: offline or
+  // missing -> keep the local draft below. Photos stay in IndexedDB (we only
+  // clear them after a Final Submit), so same-device photos still show.
+  if (['pending_review', 'changes_requested', 'approved'].includes(a.status)) {
+    try {
+      const serverForm = await api.fetchServerForm(a.id);
+      if (serverForm) {
+        draft = draft || { surveyId: a.id, status: 'draft' };
+        draft.doc = serverForm;
+        await store.putDraft(draft);
+      }
+    } catch { /* offline — use the local draft */ }
+  }
+
   if (!draft) {
     // Prefill from the site, exactly like the mobile app does.
     const doc = blankSurvey();
@@ -730,7 +750,10 @@ async function submitCurrent() {
     S.draft.status = 'synced';
     S.draft.syncedAt = new Date().toISOString();
     await store.putDraft(S.draft);
-    await store.deletePhotos(S.draft.surveyId);
+    // Keep photos through the review loop; only clear them once the survey is
+    // finally submitted (approved -> completed), so an "Edit & resubmit" still
+    // shows the photos already taken.
+    if (S.finalizeMode) await store.deletePhotos(S.draft.surveyId);
     toast(S.finalizeMode ? 'Final submission complete ✓' : 'Submitted for Ops review ✓', 'ok');
   } catch {
     // Stays queued; syncPending() retries on reconnect with the same intent.

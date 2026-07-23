@@ -103,6 +103,19 @@ export async function markNotDone(surveyId, reason) {
   if (error) throw error;
 }
 
+/**
+ * Latest server-side form JSON for a survey (`survey_data.form`), or null if
+ * none / offline. Used to reopen a survey already in the review pipeline with
+ * the surveyor's filled data — plus any edits Ops made during review — instead
+ * of a blank form. RLS lets a surveyor read their own survey's data.
+ */
+export async function fetchServerForm(surveyId) {
+  const { data, error } = await sb
+    .from('survey_data').select('form').eq('survey_id', surveyId).maybeSingle();
+  if (error) throw error;
+  return data?.form || null;
+}
+
 /* ── solar auto-fill ─────────────────────────────────────────────────────── */
 
 /**
