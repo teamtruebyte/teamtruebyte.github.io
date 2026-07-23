@@ -59,14 +59,18 @@ export async function fetchProfile() {
 /* ── assignments ─────────────────────────────────────────────────────────── */
 
 const ASSIGNMENT_COLS =
-  'id, status, scheduled_date, route_day, route_seq, not_done_reason, ' +
+  'id, status, scheduled_date, route_day, route_seq, not_done_reason, review_note, ' +
   'site:sites!inner(id, site_code, name, address, cluster, lat, lng)';
 
-/** Active work (scheduled + in progress), earliest first. */
+/**
+ * Active work: scheduled, in progress, or anywhere in the submit-for-review
+ * pipeline (awaiting Ops, sent back for changes, or approved and awaiting
+ * Final Submit), earliest first.
+ */
 export async function fetchActive() {
   const { data, error } = await sb
     .from('surveys').select(ASSIGNMENT_COLS)
-    .in('status', ['scheduled', 'in_progress'])
+    .in('status', ['scheduled', 'in_progress', 'pending_review', 'changes_requested', 'approved'])
     .order('scheduled_date', { ascending: true })
     .order('route_seq', { ascending: true });
   if (error) throw error;
@@ -132,14 +136,18 @@ function photoJson(p, storagePath) {
 }
 
 /**
- * Pushes a completed survey. Throws on failure so the caller can leave it
- * queued and retry later (offline-first). Safe to call repeatedly.
+ * Pushes a filled survey. Throws on failure so the caller can leave it queued
+ * and retry later (offline-first). Safe to call repeatedly.
  *
  * @param surveyId server `surveys` row id
  * @param doc      the plain form object (see schema.blankSurvey)
  * @param photos   rows from the IndexedDB photos store for this survey
+ * @param finalize true only for the surveyor's "Final Submit" after Ops
+ *                 approval (-> `surveys.status = 'completed'`); false for the
+ *                 normal first submit or a resubmit after changes were
+ *                 requested (-> `surveys.status = 'pending_review'`).
  */
-export async function submitSurvey(surveyId, doc, photos) {
+export async function submitSurvey(surveyId, doc, photos, { finalize = false } = {}) {
   // 1. org_id — survey_data and photos both require it, and RLS checks it.
   const { data: row, error: e1 } = await sb
     .from('surveys').select('org_id').eq('id', surveyId).single();
@@ -161,6 +169,7 @@ export async function submitSurvey(surveyId, doc, photos) {
   form.id = crypto.randomUUID();
   form.serverSurveyId = surveyId;
   form.status = 'completed';
+  form.finalizeOnSync = finalize;
   form.createdAt = doc.createdAt || new Date().toISOString();
   form.updatedAt = new Date().toISOString();
   form.syncedAt = new Date().toISOString();
@@ -186,10 +195,17 @@ export async function submitSurvey(surveyId, doc, photos) {
   });
   if (e2) throw e2;
 
-  // 4. Replace the photo rows (idempotent retry), then insert fresh ones.
-  const { error: e3 } = await sb.from('photos').delete().eq('survey_id', surveyId);
-  if (e3) throw e3;
-  if (uploaded.length) {
+  // 4. Replace photo rows, but only for categories this device actually has
+  //    photos for right now. A survey can be edited and resubmitted several
+  //    times (review -> changes requested -> resubmit -> approved -> final
+  //    submit), so a blanket delete-all would wipe previously-uploaded photos
+  //    for any category missing locally (cleared cache, different device).
+  const touchedCategories = [...new Set(uploaded.map((p) => p.category))];
+  if (touchedCategories.length) {
+    const { error: e3 } = await sb.from('photos').delete()
+      .eq('survey_id', surveyId).in('category', touchedCategories);
+    if (e3) throw e3;
+
     const rows = uploaded.map((p) => ({
       survey_id: surveyId,
       org_id: orgId,
@@ -205,9 +221,11 @@ export async function submitSurvey(surveyId, doc, photos) {
     if (error) throw error;
   }
 
-  // 5. Mark the assignment complete.
+  // 5. Move the assignment to the next stage of the review pipeline.
   const { error: e4 } = await sb.from('surveys')
-    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .update(finalize
+      ? { status: 'completed', completed_at: new Date().toISOString() }
+      : { status: 'pending_review', submitted_for_review_at: new Date().toISOString() })
     .eq('id', surveyId);
   if (e4) throw e4;
 

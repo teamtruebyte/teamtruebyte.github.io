@@ -16,6 +16,9 @@ const app = document.getElementById('app');
 const S = {
   profile: null, screen: 'loading', assignments: [], schedule: [],
   assignment: null, draft: null, photos: [], step: 0, pending: 0, busy: false,
+  // True when the wizard is open for the surveyor's "Final Submit" after Ops
+  // approval, as opposed to the normal "Submit for Review".
+  finalizeMode: false,
 };
 const urls = new Map();   // blob -> object URL, revoked on screen change
 
@@ -44,6 +47,8 @@ function clearUrls() {
 
 const STATUS_LABEL = {
   scheduled: 'Scheduled', in_progress: 'In progress',
+  pending_review: 'Awaiting review', changes_requested: 'Changes requested',
+  approved: 'Approved — final submit',
   completed: 'Completed', not_done: 'Not done',
 };
 
@@ -108,7 +113,7 @@ async function syncPending() {
   for (const d of pending) {
     try {
       const photos = await store.photosFor(d.surveyId);
-      await api.submitSurvey(d.surveyId, d.doc, photos);
+      await api.submitSurvey(d.surveyId, d.doc, photos, { finalize: !!d.finalizeOnSync });
       d.status = 'synced';
       d.syncedAt = new Date().toISOString();
       await store.putDraft(d);
@@ -300,19 +305,38 @@ function renderSchedule() {
 
 /* ── assignment actions ──────────────────────────────────────────────────── */
 
+/** The action button(s) offered below Locate, depending on where the
+ *  assignment sits in the scheduled -> ... -> completed pipeline. */
+function statusActionsHtml(a) {
+  switch (a.status) {
+    case 'scheduled':
+    case 'in_progress':
+      return `<button class="btn" data-act="start">I have reached</button>
+        <button class="btn ghost danger" data-act="notdone">Mark as Not Done</button>`;
+    case 'pending_review':
+      return `<p class="mut sm">Awaiting Ops review — you'll be notified once they respond.</p>`;
+    case 'changes_requested':
+      return `${a.review_note ? `<p class="mut sm">Ops: ${esc(a.review_note)}</p>` : ''}
+        <button class="btn" data-act="edit">Edit &amp; resubmit</button>`;
+    case 'approved':
+      return `<p class="mut sm">Approved by Ops — review and finalize.</p>
+        <button class="btn" data-act="finalize">Final submit</button>`;
+    default:
+      return '';
+  }
+}
+
 function openAssignmentSheet(id) {
   const a = [...S.assignments, ...S.schedule].find((x) => x.id === id);
   if (!a) return;
   const s = a.site || {};
-  const done = a.status === 'completed';
   const d = document.createElement('div');
   d.className = 'sheet-wrap';
   d.innerHTML = `<div class="sheet">
     <h3>${esc(s.name || 'Site')}</h3>
     <p class="mut">${esc(s.site_code || '')}${s.address ? ' · ' + esc(s.address) : ''}</p>
     <button class="btn ghost" data-act="locate">Locate (open in Maps)</button>
-    ${done ? '' : `<button class="btn" data-act="start">I have reached</button>
-    <button class="btn ghost danger" data-act="notdone">Mark as Not Done</button>`}
+    ${statusActionsHtml(a)}
     <button class="btn ghost" data-act="close">Cancel</button></div>`;
   d.addEventListener('click', async (e) => {
     const act = e.target.dataset?.act;
@@ -322,7 +346,9 @@ function openAssignmentSheet(id) {
       if (s.lat != null && s.lng != null) {
         window.open(`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`, '_blank');
       } else toast('This site has no coordinates.', 'err');
-    } else if (act === 'start') { d.remove(); startSurvey(a); }
+    } else if (act === 'start') { d.remove(); startSurvey(a, { markStarted: true }); }
+    else if (act === 'edit') { d.remove(); startSurvey(a, { markStarted: false }); }
+    else if (act === 'finalize') { d.remove(); startSurvey(a, { markStarted: false, finalize: true }); }
     else if (act === 'notdone') { d.remove(); openNotDone(a); }
     else { d.remove(); }
   });
@@ -361,7 +387,14 @@ function openNotDone(a) {
 
 /* ── wizard ──────────────────────────────────────────────────────────────── */
 
-async function startSurvey(a) {
+/**
+ * Opens the wizard for an assignment, prefilled from the site (or the
+ * surveyor's existing local draft). [markStarted] flags it in-progress on the
+ * server (only meaningful the first time, from `scheduled`); [finalize]
+ * controls whether the wizard's last step reads "Final Submit" (-> pushes
+ * `completed`) or "Submit for Review" (-> pushes `pending_review`).
+ */
+async function startSurvey(a, { markStarted = true, finalize = false } = {}) {
   const s = a.site || {};
   let draft = await store.getDraft(a.id);
   if (!draft) {
@@ -378,12 +411,15 @@ async function startSurvey(a) {
     draft = { surveyId: a.id, doc, status: 'draft' };
     await store.putDraft(draft);
   }
-  try { await api.markInProgress(a.id); } catch { /* offline is fine */ }
+  if (markStarted) {
+    try { await api.markInProgress(a.id); } catch { /* offline is fine */ }
+  }
 
   S.assignment = a;
   S.draft = draft;
   S.photos = await store.photosFor(a.id);
   S.step = 0;
+  S.finalizeMode = finalize;
   S.screen = 'wizard';
   render();
 }
@@ -424,7 +460,7 @@ function renderWizard() {
     <main class="wrap">${body}</main>
     <footer class="nav">
       <button class="btn ghost" id="prevBtn" ${S.step === 0 ? 'disabled' : ''}>Back</button>
-      ${last ? `<button class="btn" id="submitBtn">Submit survey</button>`
+      ${last ? `<button class="btn" id="submitBtn">${S.finalizeMode ? 'Final Submit' : 'Submit for Review'}</button>`
              : `<button class="btn" id="nextBtn">Next</button>`}
     </footer>`;
 
@@ -686,17 +722,18 @@ async function submitCurrent() {
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
   S.draft.status = 'pending';
+  S.draft.finalizeOnSync = S.finalizeMode;
   await saveDraft();
 
   try {
-    await api.submitSurvey(S.draft.surveyId, S.draft.doc, S.photos);
+    await api.submitSurvey(S.draft.surveyId, S.draft.doc, S.photos, { finalize: S.finalizeMode });
     S.draft.status = 'synced';
     S.draft.syncedAt = new Date().toISOString();
     await store.putDraft(S.draft);
     await store.deletePhotos(S.draft.surveyId);
-    toast('Survey submitted ✓', 'ok');
+    toast(S.finalizeMode ? 'Final submission complete ✓' : 'Submitted for Ops review ✓', 'ok');
   } catch {
-    // Stays queued; syncPending() retries on reconnect.
+    // Stays queued; syncPending() retries on reconnect with the same intent.
     toast('Saved on this phone — it will upload when you have signal.', 'warn');
   }
   S.busy = false;

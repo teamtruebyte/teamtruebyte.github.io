@@ -92,6 +92,9 @@ textarea { resize:vertical; }
   background:#eaefe8; color:var(--mut); text-transform:uppercase; letter-spacing:.03em; }
 .chip.scheduled { background:#e7effb; color:#17457e; }
 .chip.in_progress { background:#fdf0d8; color:var(--amber-d); }
+.chip.pending_review { background:#f1e6f9; color:#6a1b9a; }
+.chip.changes_requested { background:#fbe3d8; color:#d84315; }
+.chip.approved { background:#d9f0f2; color:#00838f; }
 .chip.completed { background:#e3f2e5; color:var(--south); }
 .chip.not_done { background:#fdecea; color:var(--danger); }
 
