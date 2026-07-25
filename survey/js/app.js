@@ -417,12 +417,20 @@ async function startSurvey(a, { markStarted = true, finalize = false } = {}) {
     } catch { /* offline — use the local draft */ }
   }
 
+  // Fill the state from the site for drafts started before it existed, without
+  // overwriting anything the surveyor typed.
+  if (draft?.doc && !String(draft.doc.state || '').trim() && s.state) {
+    draft.doc.state = s.state;
+    await store.putDraft(draft);
+  }
+
   if (!draft) {
     // Prefill from the site, exactly like the mobile app does.
     const doc = blankSurvey();
     doc.siteId = s.site_code || '';
     doc.siteName = s.name || '';
     doc.siteAddress = s.address || '';
+    doc.state = s.state || '';
     doc.latitude = s.lat != null ? String(s.lat) : '';
     doc.longitude = s.lng != null ? String(s.lng) : '';
     doc.surveyDate = new Date().toISOString().slice(0, 10);

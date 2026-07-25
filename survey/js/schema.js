@@ -75,6 +75,7 @@ export const STEPS = [
       { key: 'siteId', label: 'Site ID', required: true },
       { key: 'siteName', label: 'Site Name', required: true },
       { key: 'siteAddress', label: 'Site Address', type: 'textarea' },
+      { key: 'state', label: 'State' },
       { key: 'surveyDate', label: 'Survey Date', type: 'date' },
       { key: 'engineerName', label: 'Surveyor Name' },
       { key: 'circle', label: 'Circle' },
@@ -157,7 +158,7 @@ export const STEPS = [
 /** Blank survey document — every key the mobile Survey model serialises. */
 export function blankSurvey() {
   return {
-    siteId: '', siteName: '', siteAddress: '', surveyDate: '',
+    siteId: '', siteName: '', siteAddress: '', state: '', surveyDate: '',
     engineerName: '', circle: '', customerName: '', contactNumber: '',
     latitude: '', longitude: '', gpsAccuracy: '',
     windSpeed: '', insolationAnnual: '',

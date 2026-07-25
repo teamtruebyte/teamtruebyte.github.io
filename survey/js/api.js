@@ -60,7 +60,7 @@ export async function fetchProfile() {
 
 const ASSIGNMENT_COLS =
   'id, status, scheduled_date, route_day, route_seq, not_done_reason, review_note, ' +
-  'site:sites!inner(id, site_code, name, address, cluster, lat, lng)';
+  'site:sites!inner(id, site_code, name, address, state, cluster, lat, lng)';
 
 /**
  * Active work: scheduled, in progress, or anywhere in the submit-for-review
