@@ -59,18 +59,18 @@ export async function fetchProfile() {
 /* ── assignments ─────────────────────────────────────────────────────────── */
 
 const ASSIGNMENT_COLS =
-  'id, status, scheduled_date, route_day, route_seq, not_done_reason, review_note, ' +
+  'id, status, scheduled_date, route_day, route_seq, not_done_reason, ' +
   'site:sites!inner(id, site_code, name, address, state, cluster, lat, lng)';
 
 /**
- * Active work: scheduled, in progress, or anywhere in the submit-for-review
- * pipeline (awaiting Ops, sent back for changes, or approved and awaiting
- * Final Submit), earliest first.
+ * Active work: still to do (scheduled) or under way (in_progress), earliest
+ * first. A submitted survey is `completed` and drops off this list — Ops
+ * reviews it in the portal, the surveyor has nothing further to do.
  */
 export async function fetchActive() {
   const { data, error } = await sb
     .from('surveys').select(ASSIGNMENT_COLS)
-    .in('status', ['scheduled', 'in_progress', 'pending_review', 'changes_requested', 'approved'])
+    .in('status', ['scheduled', 'in_progress'])
     .order('scheduled_date', { ascending: true })
     .order('route_seq', { ascending: true });
   if (error) throw error;
@@ -101,19 +101,6 @@ export async function markNotDone(surveyId, reason) {
     .update({ status: 'not_done', not_done_reason: reason.trim() })
     .eq('id', surveyId);
   if (error) throw error;
-}
-
-/**
- * Latest server-side form JSON for a survey (`survey_data.form`), or null if
- * none / offline. Used to reopen a survey already in the review pipeline with
- * the surveyor's filled data — plus any edits Ops made during review — instead
- * of a blank form. RLS lets a surveyor read their own survey's data.
- */
-export async function fetchServerForm(surveyId) {
-  const { data, error } = await sb
-    .from('survey_data').select('form').eq('survey_id', surveyId).maybeSingle();
-  if (error) throw error;
-  return data?.form || null;
 }
 
 /* ── solar auto-fill ─────────────────────────────────────────────────────── */
@@ -155,12 +142,11 @@ function photoJson(p, storagePath) {
  * @param surveyId server `surveys` row id
  * @param doc      the plain form object (see schema.blankSurvey)
  * @param photos   rows from the IndexedDB photos store for this survey
- * @param finalize true only for the surveyor's "Final Submit" after Ops
- *                 approval (-> `surveys.status = 'completed'`); false for the
- *                 normal first submit or a resubmit after changes were
- *                 requested (-> `surveys.status = 'pending_review'`).
+ *
+ * The surveyor submits once, from the field: this writes
+ * `surveys.status = 'completed'`. Ops reviews it in the portal afterwards.
  */
-export async function submitSurvey(surveyId, doc, photos, { finalize = false } = {}) {
+export async function submitSurvey(surveyId, doc, photos) {
   // 1. org_id — survey_data and photos both require it, and RLS checks it.
   const { data: row, error: e1 } = await sb
     .from('surveys').select('org_id').eq('id', surveyId).single();
@@ -182,7 +168,6 @@ export async function submitSurvey(surveyId, doc, photos, { finalize = false } =
   form.id = crypto.randomUUID();
   form.serverSurveyId = surveyId;
   form.status = 'completed';
-  form.finalizeOnSync = finalize;
   form.createdAt = doc.createdAt || new Date().toISOString();
   form.updatedAt = new Date().toISOString();
   form.syncedAt = new Date().toISOString();
@@ -209,10 +194,10 @@ export async function submitSurvey(surveyId, doc, photos, { finalize = false } =
   if (e2) throw e2;
 
   // 4. Replace photo rows, but only for categories this device actually has
-  //    photos for right now. A survey can be edited and resubmitted several
-  //    times (review -> changes requested -> resubmit -> approved -> final
-  //    submit), so a blanket delete-all would wipe previously-uploaded photos
-  //    for any category missing locally (cleared cache, different device).
+  //    photos for right now. A queued survey can be pushed more than once (an
+  //    offline retry), so a blanket delete-all would wipe previously-uploaded
+  //    photos for any category missing locally (cleared cache, different
+  //    device) — and any photo Ops added in the portal.
   const touchedCategories = [...new Set(uploaded.map((p) => p.category))];
   if (touchedCategories.length) {
     const { error: e3 } = await sb.from('photos').delete()
@@ -234,11 +219,9 @@ export async function submitSurvey(surveyId, doc, photos, { finalize = false } =
     if (error) throw error;
   }
 
-  // 5. Move the assignment to the next stage of the review pipeline.
+  // 5. The survey is done — Ops takes it from here in the portal.
   const { error: e4 } = await sb.from('surveys')
-    .update(finalize
-      ? { status: 'completed', completed_at: new Date().toISOString() }
-      : { status: 'pending_review', submitted_for_review_at: new Date().toISOString() })
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('id', surveyId);
   if (e4) throw e4;
 

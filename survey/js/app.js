@@ -16,9 +16,6 @@ const app = document.getElementById('app');
 const S = {
   profile: null, screen: 'loading', assignments: [], schedule: [],
   assignment: null, draft: null, photos: [], step: 0, pending: 0, busy: false,
-  // True when the wizard is open for the surveyor's "Final Submit" after Ops
-  // approval, as opposed to the normal "Submit for Review".
-  finalizeMode: false,
 };
 const urls = new Map();   // blob -> object URL, revoked on screen change
 
@@ -47,8 +44,6 @@ function clearUrls() {
 
 const STATUS_LABEL = {
   scheduled: 'Scheduled', in_progress: 'In progress',
-  pending_review: 'Awaiting review', changes_requested: 'Changes requested',
-  approved: 'Approved — final submit',
   completed: 'Completed', not_done: 'Not done',
 };
 
@@ -113,13 +108,12 @@ async function syncPending() {
   for (const d of pending) {
     try {
       const photos = await store.photosFor(d.surveyId);
-      await api.submitSurvey(d.surveyId, d.doc, photos, { finalize: !!d.finalizeOnSync });
+      await api.submitSurvey(d.surveyId, d.doc, photos);
       d.status = 'synced';
       d.syncedAt = new Date().toISOString();
       await store.putDraft(d);
-      // Only clear photos after a Final Submit; keep them through the review
-      // loop so an "Edit & resubmit" still shows what was already captured.
-      if (d.finalizeOnSync) await store.deletePhotos(d.surveyId);
+      // Safely on the server now — free the phone's storage.
+      await store.deletePhotos(d.surveyId);
       sent++;
     } catch { /* stay pending, try again later */ }
   }
@@ -307,22 +301,15 @@ function renderSchedule() {
 
 /* ── assignment actions ──────────────────────────────────────────────────── */
 
-/** The action button(s) offered below Locate, depending on where the
- *  assignment sits in the scheduled -> ... -> completed pipeline. */
+/** The action button(s) offered below Locate. A survey is submitted once, from
+ *  the field; after that it is completed and Ops takes over in the portal, so
+ *  there is nothing left for the surveyor to do. */
 function statusActionsHtml(a) {
   switch (a.status) {
     case 'scheduled':
     case 'in_progress':
       return `<button class="btn" data-act="start">I have reached</button>
         <button class="btn ghost danger" data-act="notdone">Mark as Not Done</button>`;
-    case 'pending_review':
-      return `<p class="mut sm">Awaiting Ops review — you'll be notified once they respond.</p>`;
-    case 'changes_requested':
-      return `${a.review_note ? `<p class="mut sm">Ops: ${esc(a.review_note)}</p>` : ''}
-        <button class="btn" data-act="edit">Edit &amp; resubmit</button>`;
-    case 'approved':
-      return `<p class="mut sm">Approved by Ops — review and finalize.</p>
-        <button class="btn" data-act="finalize">Final submit</button>`;
     default:
       return '';
   }
@@ -349,8 +336,6 @@ function openAssignmentSheet(id) {
         window.open(`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`, '_blank');
       } else toast('This site has no coordinates.', 'err');
     } else if (act === 'start') { d.remove(); startSurvey(a, { markStarted: true }); }
-    else if (act === 'edit') { d.remove(); startSurvey(a, { markStarted: false }); }
-    else if (act === 'finalize') { d.remove(); startSurvey(a, { markStarted: false, finalize: true }); }
     else if (act === 'notdone') { d.remove(); openNotDone(a); }
     else { d.remove(); }
   });
@@ -392,30 +377,11 @@ function openNotDone(a) {
 /**
  * Opens the wizard for an assignment, prefilled from the site (or the
  * surveyor's existing local draft). [markStarted] flags it in-progress on the
- * server (only meaningful the first time, from `scheduled`); [finalize]
- * controls whether the wizard's last step reads "Final Submit" (-> pushes
- * `completed`) or "Submit for Review" (-> pushes `pending_review`).
+ * server (only meaningful the first time, from `scheduled`).
  */
-async function startSurvey(a, { markStarted = true, finalize = false } = {}) {
+async function startSurvey(a, { markStarted = true } = {}) {
   const s = a.site || {};
   let draft = await store.getDraft(a.id);
-
-  // For a survey already in the review pipeline, the SERVER is the source of
-  // truth (it may carry edits Ops made during review). Pull the latest form
-  // back so "Edit & resubmit" / "Final submit" never opens a blank form and a
-  // resubmit can't silently overwrite Ops's edits. Best-effort: offline or
-  // missing -> keep the local draft below. Photos stay in IndexedDB (we only
-  // clear them after a Final Submit), so same-device photos still show.
-  if (['pending_review', 'changes_requested', 'approved'].includes(a.status)) {
-    try {
-      const serverForm = await api.fetchServerForm(a.id);
-      if (serverForm) {
-        draft = draft || { surveyId: a.id, status: 'draft' };
-        draft.doc = serverForm;
-        await store.putDraft(draft);
-      }
-    } catch { /* offline — use the local draft */ }
-  }
 
   // Fill the state from the site for drafts started before it existed, without
   // overwriting anything the surveyor typed.
@@ -447,7 +413,6 @@ async function startSurvey(a, { markStarted = true, finalize = false } = {}) {
   S.draft = draft;
   S.photos = await store.photosFor(a.id);
   S.step = 0;
-  S.finalizeMode = finalize;
   S.screen = 'wizard';
   render();
 }
@@ -488,7 +453,7 @@ function renderWizard() {
     <main class="wrap">${body}</main>
     <footer class="nav">
       <button class="btn ghost" id="prevBtn" ${S.step === 0 ? 'disabled' : ''}>Back</button>
-      ${last ? `<button class="btn" id="submitBtn">${S.finalizeMode ? 'Final Submit' : 'Submit for Review'}</button>`
+      ${last ? `<button class="btn" id="submitBtn">Submit survey</button>`
              : `<button class="btn" id="nextBtn">Next</button>`}
     </footer>`;
 
@@ -750,19 +715,16 @@ async function submitCurrent() {
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
   S.draft.status = 'pending';
-  S.draft.finalizeOnSync = S.finalizeMode;
   await saveDraft();
 
   try {
-    await api.submitSurvey(S.draft.surveyId, S.draft.doc, S.photos, { finalize: S.finalizeMode });
+    await api.submitSurvey(S.draft.surveyId, S.draft.doc, S.photos);
     S.draft.status = 'synced';
     S.draft.syncedAt = new Date().toISOString();
     await store.putDraft(S.draft);
-    // Keep photos through the review loop; only clear them once the survey is
-    // finally submitted (approved -> completed), so an "Edit & resubmit" still
-    // shows the photos already taken.
-    if (S.finalizeMode) await store.deletePhotos(S.draft.surveyId);
-    toast(S.finalizeMode ? 'Final submission complete ✓' : 'Submitted for Ops review ✓', 'ok');
+    // Safely on the server now — free the phone's storage.
+    await store.deletePhotos(S.draft.surveyId);
+    toast('Survey submitted ✓', 'ok');
   } catch {
     // Stays queued; syncPending() retries on reconnect with the same intent.
     toast('Saved on this phone — it will upload when you have signal.', 'warn');
